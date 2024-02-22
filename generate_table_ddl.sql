@@ -1,3 +1,9 @@
+-- Filename: generate_table_ddl.sql
+
+-- Explanation:
+-- This SQL script generates Data Definition Language (DDL) statements for all tables in the 'public' schema of the PostgreSQL database. It includes table creation statements along with column definitions and constraints (such as Primary Keys, Foreign Keys, and Unique constraints). The script iterates through each table, retrieves column information and constraints, and constructs the corresponding DDL statements. Finally, it outputs the generated DDL for each table using PostgreSQL's RAISE NOTICE.
+
+-- This script is useful for documenting the structure of tables within the 'public' schema, aiding in database schema analysis and migration planning. It provides a clear overview of the database structure and can be used for version control or database migration purposes.
   
 DO $$
 DECLARE
