@@ -2,11 +2,26 @@
 -- Purpose: For every table/column in a schema, report non-NULL counts and (for text) non-empty counts.
 -- Efficient: builds one aggregate SELECT per table and unpivots via arrays, so each table is scanned only once.
 
-DO $$
-DECLARE
-    target_schema text := 'public'; -- change if needed
-    tbl record;
+DROP FUNCTION IF EXISTS util_report_column_value_counts(text);
 
+CREATE OR REPLACE FUNCTION util_report_column_value_counts(target_schema text DEFAULT 'public')
+RETURNS TABLE (
+    table_schema            text,
+    table_name              text,
+    column_name             text,
+    data_type               text,
+    ordinal_position        int,
+    total_rows              bigint,
+    non_null_count          bigint,
+    null_count              bigint,
+    non_empty_text_count    bigint,
+    pct_filled              numeric(6,2),
+    pct_non_empty_text      numeric(6,2)
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    tbl record;
     names_sql           text;
     types_sql           text;
     ords_sql            text;
@@ -14,29 +29,13 @@ DECLARE
     nonempties_expr     text;
     dyn_sql             text;
 BEGIN
-    -- Results staging table
-    CREATE TEMP TABLE IF NOT EXISTS column_value_counts (
-        table_schema            text,
-        table_name              text,
-        column_name             text,
-        data_type               text,
-        ordinal_position        int,
-        total_rows              bigint,
-        non_null_count          bigint,
-        null_count              bigint,
-        non_empty_text_count    bigint,
-        pct_filled              numeric(6,2),
-        pct_non_empty_text      numeric(6,2)
-    ) ON COMMIT DROP;
-
     FOR tbl IN
-        SELECT table_schema, table_name
-        FROM information_schema.tables
-        WHERE table_schema = target_schema
-          AND table_type = 'BASE TABLE'
-        ORDER BY table_schema, table_name
+        SELECT t.table_schema, t.table_name
+        FROM information_schema.tables AS t
+        WHERE t.table_schema = target_schema
+          AND t.table_type = 'BASE TABLE'
+        ORDER BY t.table_schema, t.table_name
     LOOP
-        -- Build aggregate expressions & label arrays ordered by ordinal_position
         SELECT
             string_agg(format('%L', c.column_name), ', ' ORDER BY c.ordinal_position) AS names_sql,
             string_agg(format('%L', c.data_type), ', ' ORDER BY c.ordinal_position)   AS types_sql,
@@ -44,7 +43,7 @@ BEGIN
             string_agg(format('count(%1$I)::bigint', c.column_name), ', ' ORDER BY c.ordinal_position) AS nonnulls_expr,
             string_agg(
                 CASE
-                    WHEN c.data_type IN ('character varying','character','text','citext')
+                    WHEN c.udt_name IN ('text','varchar','bpchar','citext')
                         THEN format('count(nullif(btrim(%1$I::text), %2$L))::bigint', c.column_name, '')
                     ELSE 'NULL::bigint'
                 END,
@@ -55,7 +54,6 @@ BEGIN
         WHERE c.table_schema = tbl.table_schema
           AND c.table_name   = tbl.table_name;
 
-        -- Skip weird edge cases (no columns)
         IF names_sql IS NULL THEN
             CONTINUE;
         END IF;
@@ -70,11 +68,6 @@ BEGIN
                     ARRAY[%s]::bigint[]                               AS non_null_counts,
                     ARRAY[%s]::bigint[]                               AS non_empty_text_counts
                 FROM %I.%I
-            )
-            INSERT INTO column_value_counts (
-                table_schema, table_name, column_name, data_type, ordinal_position,
-                total_rows, non_null_count, null_count, non_empty_text_count,
-                pct_filled, pct_non_empty_text
             )
             SELECT
                 %L AS table_schema,
@@ -102,12 +95,12 @@ BEGIN
             tbl.table_schema, tbl.table_name
         );
 
-        EXECUTE dyn_sql;
+        RETURN QUERY EXECUTE dyn_sql;
     END LOOP;
-
-    -- Final output
-    RAISE NOTICE 'Computed column value counts. Use: SELECT * FROM column_value_counts ORDER BY table_schema, table_name, ordinal_position;';
-END$$;
+END;
+$$;
 
 -- Get results:
--- SELECT * FROM column_value_counts ORDER BY table_schema, table_name, ordinal_position;
+-- SELECT * FROM util_report_column_value_counts('public') ORDER BY table_schema, table_name, ordinal_position;
+-- Persist Results:
+-- CREATE SCHEMA IF NOT EXISTS analytics; CREATE MATERIALIZED VIEW analytics.column_value_counts AS SELECT * FROM util_report_column_value_counts('public');
