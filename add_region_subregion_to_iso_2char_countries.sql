@@ -1,6 +1,6 @@
-UPDATE speakers
+UPDATE speaker
 SET
-    "Region" = CASE LOWER(country)
+    region_name = CASE LOWER(country_iso2)
         WHEN 'af' THEN 'Asia'
         WHEN 'ax' THEN 'Europe'
         WHEN 'al' THEN 'Europe'
@@ -252,7 +252,7 @@ SET
         WHEN 'zw' THEN 'Africa'
         ELSE 'Unknown'
     END,
-    "SubRegion" = CASE LOWER(country)
+    sub_region_name = CASE LOWER(country_iso2)
         WHEN 'af' THEN 'Southern Asia'
         WHEN 'ax' THEN 'Northern Europe'
         WHEN 'al' THEN 'Southern Europe'
